@@ -1,0 +1,53 @@
+exec go build
+set monero_vanity "[pwd]/monero-vanity"
+
+if [catch {set tmpdir $env(TMPDIR)}] {
+    set tmpdir "/tmp"
+}
+
+
+proc testDeterminism {} {
+    global monero_vanity
+    set addr_and_key [exec $monero_vanity .]
+    set addr  [lindex $addr_and_key 0]
+    set key   [lindex $addr_and_key 1]
+    set words [exec $monero_vanity -convert $key]
+
+    puts $addr
+
+    global tmpdir
+    set tmpdir $tmpdir/monero-vanity-test-[pid]
+
+    exec mkdir -p $tmpdir
+    cd $tmpdir
+
+    spawn simplewallet --restore-deterministic-wallet --electrum-seed "$words"
+    expect "Wallet file name: "
+    send "wallet.bin\n"
+    expect "password: "
+    send "\n"
+
+    expect $addr
+
+    expect "\\\[wallet "
+    send "seed\n"
+    expect {
+        "the following 24 words can be used to recover access to your wallet." {
+            expect "$words" { puts "\nTest successful." } 
+        }
+        "The wallet is non-deterministic." { 
+            exit 1
+        }
+    }
+
+    cd ..
+    exec rm -r $tmpdir
+}
+
+set count $argv
+if {$count == ""} { set count 1 }
+
+while {$count > 0 } {
+    testDeterminism
+    incr count -1
+}
